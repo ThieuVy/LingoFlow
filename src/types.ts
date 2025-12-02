@@ -7,7 +7,8 @@ export enum View {
   LIBRARY = 'LIBRARY',
   TESTS = 'TESTS',
   DICTIONARY = 'DICTIONARY',
-  PROFILE = 'PROFILE'
+  PROFILE = 'PROFILE',
+  EDIT_PROFILE = 'EDIT_PROFILE' // Màn hình riêng
 }
 
 export interface UserStats {
@@ -20,6 +21,7 @@ export interface UserStats {
 }
 
 export interface UserProfile {
+  id?: string; // Thêm ID để sync DB chính xác
   name: string;
   email: string;
   avatar: string;

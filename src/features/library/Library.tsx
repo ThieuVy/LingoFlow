@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// FIX: Go up two levels
 import { fetchBooks, fetchChapterContent } from '../../services/gemini';
 import { Book } from '../../types';
 import ContentReader from '../reader/ContentReader';
@@ -11,28 +10,19 @@ const Library: React.FC = () => {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [chapterLoading, setChapterLoading] = useState<number | null>(null);
   
-  // Embedded Reader State
   const [readingContent, setReadingContent] = useState<string | null>(null);
   const [readingTitle, setReadingTitle] = useState<string | null>(null);
 
   const loadBooks = async () => {
     setLoading(true);
-    setSelectedBook(null);
-    setReadingContent(null);
     try {
       const data = await fetchBooks(genre);
       setBooks(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); } 
+    finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    loadBooks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadBooks(); }, []); // eslint-disable-line
 
   const handleChapterClick = async (chapterNum: number) => {
       if (!selectedBook) return;
@@ -41,38 +31,25 @@ const Library: React.FC = () => {
           const content = await fetchChapterContent(selectedBook.title, selectedBook.author, chapterNum);
           setReadingTitle(`${selectedBook.title} - Ch. ${chapterNum}`);
           setReadingContent(content);
-      } catch(e) {
-          console.error(e);
-      } finally {
-          setChapterLoading(null);
-      }
+      } catch(e) { console.error(e); } 
+      finally { setChapterLoading(null); }
   };
 
-  const handleBackFromReader = () => {
-      setReadingContent(null);
-      setReadingTitle(null);
-  };
+  const genres = ['Classic Literature', 'Sci-Fi & Fantasy', 'Mystery', 'History', 'Romance', 'Adventure', 'Philosophy'];
 
-  const genres = ['Classic Literature', 'Sci-Fi & Fantasy', 'Mystery & Thriller', 'History & Biography', 'Romance', 'Adventure', 'Philosophy', 'Young Adult'];
-
-  // 1. Embedded Reader View
   if (readingContent) {
-      return <ContentReader initialContent={readingContent} initialTitle={readingTitle || ''} onBack={handleBackFromReader} />;
+      return <ContentReader initialContent={readingContent} initialTitle={readingTitle || ''} onBack={() => { setReadingContent(null); setReadingTitle(null); }} />;
   }
 
-  // 2. Main Library View
   return (
-    <div className="p-8 sm:p-12 max-w-7xl mx-auto min-h-screen">
-      <div className="mb-10 flex items-end justify-between border-b border-slate-200 pb-6">
+    <div className="p-8 sm:p-12 max-w-[1600px] mx-auto animate-fadeIn">
+      <div className="mb-10 pb-6 border-b border-[#E9EDF7] flex justify-between items-end">
         <div>
-           <h2 className="text-4xl font-bold text-slate-900 tracking-tight font-serif">The Library</h2>
-           <p className="text-slate-500 mt-2">Authentic books and classics for your reading journey.</p>
+           <h2 className="text-3xl font-bold text-[#1B2559]">Digital Library</h2>
+           <p className="text-[#A3AED0] mt-2">Curated collection of world classics.</p>
         </div>
         {selectedBook && (
-            <button 
-                onClick={() => setSelectedBook(null)}
-                className="text-sm font-bold text-slate-500 hover:text-blue-600 flex items-center mb-1"
-            >
+            <button onClick={() => setSelectedBook(null)} className="text-[#4318FF] font-bold text-sm hover:underline flex items-center">
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                 Back to Shelves
             </button>
@@ -81,16 +58,11 @@ const Library: React.FC = () => {
 
       {!selectedBook ? (
         <>
-            {/* Genre Navigation */}
-            <div className="flex overflow-x-auto pb-4 mb-8 space-x-3 custom-scrollbar">
+            <div className="flex gap-3 mb-10 overflow-x-auto pb-2 custom-scrollbar">
                 {genres.map(g => (
-                    <button
-                        key={g}
-                        onClick={() => { setGenre(g); setTimeout(loadBooks, 0); }}
-                        className={`flex-shrink-0 px-5 py-2.5 rounded-full font-bold text-xs uppercase tracking-wide transition-all border ${
-                            genre === g 
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-md transform scale-105' 
-                            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-800'
+                    <button key={g} onClick={() => { setGenre(g); setTimeout(loadBooks, 0); }}
+                        className={`px-5 py-2.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+                            genre === g ? 'bg-[#4318FF] text-white shadow-lg shadow-indigo-500/30' : 'bg-white text-[#A3AED0] hover:bg-[#F4F7FE] hover:text-[#1B2559]'
                         }`}
                     >
                         {g}
@@ -99,119 +71,61 @@ const Library: React.FC = () => {
             </div>
 
             {loading ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 animate-pulse">
-                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(i => (
-                        <div key={i} className="space-y-4">
-                            <div className="aspect-[2/3] bg-slate-200 rounded-lg shadow-sm"></div>
-                            <div className="h-3 bg-slate-200 rounded w-3/4"></div>
-                            <div className="h-2 bg-slate-200 rounded w-1/2"></div>
-                        </div>
-                    ))}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-8">
+                    {[...Array(12)].map((_, i) => <div key={i} className="h-64 bg-white rounded-2xl animate-pulse shadow-sm"></div>)}
                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6 xl:gap-8">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-8">
                     {books.map(book => (
-                        <div 
-                            key={book.id || Math.random()}
-                            onClick={() => setSelectedBook(book)}
-                            className="group cursor-pointer flex flex-col"
-                        >
-                            {/* Book Cover */}
-                            <div 
-                                className="relative aspect-[2/3] rounded-lg shadow-md group-hover:shadow-xl group-hover:-translate-y-2 transition-all duration-300 overflow-hidden mb-3 bg-slate-200"
-                            >
-                                <img 
-                                    src={book.coverImage || `https://image.pollinations.ai/prompt/book%20cover%20${encodeURIComponent(book.title)}?nologo=true`} 
-                                    alt={book.title}
-                                    className="w-full h-full object-cover"
-                                    loading="lazy"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="absolute bottom-3 left-3 right-3 text-white text-xs font-bold text-center">
-                                        Read Now
-                                    </div>
-                                </div>
-                                <div className="absolute top-2 right-2 bg-white/20 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-bold text-white border border-white/30">
-                                    {book.level}
+                        <div key={book.id} onClick={() => setSelectedBook(book)} className="group cursor-pointer perspective-1000">
+                            <div className="relative aspect-[2/3] rounded-2xl shadow-xl transition-all duration-500 group-hover:-translate-y-2 group-hover:shadow-2xl overflow-hidden bg-[#F4F7FE]">
+                                <img src={book.coverImage} alt={book.title} className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                                    <span className="text-white text-xs font-bold uppercase tracking-wider bg-[#4318FF] w-fit px-2 py-1 rounded mb-2">Read</span>
                                 </div>
                             </div>
-                            
-                            {/* Metadata */}
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-800 leading-tight line-clamp-1">{book.title}</h3>
-                                <p className="text-xs text-slate-500 mt-1 line-clamp-1">{book.author}</p>
-                            </div>
+                            <h3 className="mt-4 font-bold text-[#1B2559] text-sm leading-tight line-clamp-1">{book.title}</h3>
+                            <p className="text-xs text-[#A3AED0] mt-1">{book.author}</p>
                         </div>
                     ))}
-                    
-                    {/* Add more books trigger */}
-                     <div 
-                        onClick={loadBooks}
-                        className="aspect-[2/3] rounded-lg border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 hover:border-slate-400 hover:text-slate-600 cursor-pointer transition-all"
-                    >
-                        <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        <span className="text-xs font-bold">Refresh / More</span>
-                    </div>
                 </div>
             )}
         </>
       ) : (
-          /* Book Detail View */
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 animate-fadeIn">
-              <div className="md:col-span-1">
-                  <div 
-                    className="aspect-[2/3] rounded-xl shadow-2xl overflow-hidden relative mb-6 max-w-xs mx-auto md:mx-0 bg-slate-200"
-                  >
-                        <img 
-                            src={selectedBook.coverImage || `https://image.pollinations.ai/prompt/book%20cover%20${encodeURIComponent(selectedBook.title)}?nologo=true`} 
-                            alt={selectedBook.title}
-                            className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                        <div className="absolute bottom-0 left-0 p-6 text-white">
-                             <p className="text-lg opacity-90 font-serif italic">{selectedBook.author}</p>
-                        </div>
-                  </div>
-                  <div className="text-center md:text-left">
-                      <div className="inline-block px-3 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-sm mb-4">
-                          Level {selectedBook.level}
-                      </div>
-                      <h2 className="text-3xl font-serif font-bold text-slate-800 mb-4 leading-tight">{selectedBook.title}</h2>
-                      <h4 className="font-bold text-slate-800 mb-2 text-sm uppercase tracking-wider">Synopsis</h4>
-                      <p className="text-slate-600 text-sm leading-relaxed">
-                          {selectedBook.description}
-                      </p>
+          <div className="bg-white rounded-[30px] p-8 shadow-xl shadow-indigo-100/50 flex flex-col md:flex-row gap-10 animate-slideUp">
+              <div className="md:w-1/3 xl:w-1/4">
+                  <div className="aspect-[2/3] rounded-2xl shadow-2xl overflow-hidden relative">
+                      <img src={selectedBook.coverImage} alt={selectedBook.title} className="w-full h-full object-cover" />
                   </div>
               </div>
+              <div className="flex-1">
+                  <div className="mb-2">
+                      <span className="px-3 py-1 rounded bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-wider">Level {selectedBook.level}</span>
+                  </div>
+                  <h2 className="text-4xl font-bold text-[#1B2559] mb-2 font-serif">{selectedBook.title}</h2>
+                  <p className="text-lg text-[#A3AED0] font-medium mb-6">by {selectedBook.author}</p>
+                  
+                  <div className="prose prose-slate text-[#2B3674] mb-8 max-w-none">
+                      <p>{selectedBook.description}</p>
+                  </div>
 
-              <div className="md:col-span-2">
-                  <h3 className="text-2xl font-bold text-slate-800 mb-6 font-serif border-b border-slate-100 pb-2">Table of Contents</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {Array.from({ length: Math.min(selectedBook.totalChapters, 20) }, (_, i) => i + 1).map((num) => (
-                          <button
-                            key={num}
-                            onClick={() => handleChapterClick(num)}
+                  <h4 className="font-bold text-[#1B2559] mb-4 uppercase text-xs tracking-wider border-b border-[#E9EDF7] pb-2">Table of Contents</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {[...Array(Math.min(selectedBook.totalChapters, 15))].map((_, i) => (
+                          <button 
+                            key={i} 
+                            onClick={() => handleChapterClick(i + 1)}
                             disabled={chapterLoading !== null}
-                            className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group text-left"
+                            className="flex items-center justify-between p-3 rounded-xl border border-[#E9EDF7] hover:border-[#4318FF] hover:bg-[#F4F7FE] transition-all group"
                           >
-                              <div className="flex items-center space-x-4">
-                                  <div className="w-8 h-8 rounded-full bg-slate-50 text-slate-500 font-bold flex items-center justify-center text-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                      {num}
-                                  </div>
-                                  <span className="font-semibold text-slate-700 group-hover:text-blue-700">Chapter {num}</span>
-                              </div>
-                              {chapterLoading === num ? (
-                                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                              <span className="text-sm font-bold text-[#1B2559] group-hover:text-[#4318FF]">Chapter {i + 1}</span>
+                              {chapterLoading === i + 1 ? (
+                                  <div className="w-4 h-4 border-2 border-[#4318FF] border-t-transparent rounded-full animate-spin"></div>
                               ) : (
-                                  <svg className="w-5 h-5 text-slate-300 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                  <svg className="w-4 h-4 text-[#A3AED0] group-hover:text-[#4318FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                               )}
                           </button>
                       ))}
-                      {selectedBook.totalChapters > 20 && (
-                          <div className="p-4 text-center text-slate-400 italic text-sm">
-                              + {selectedBook.totalChapters - 20} more chapters...
-                          </div>
-                      )}
                   </div>
               </div>
           </div>
