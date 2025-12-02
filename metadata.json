@@ -1,0 +1,7 @@
+{
+  "name": "LingoFlow",
+  "description": "An AI-powered language learning platform integrating Listening, Speaking, Reading, and Writing skills using Gemini models.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
