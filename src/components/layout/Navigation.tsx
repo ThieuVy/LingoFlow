@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, UserProfile } from '../../types';
+import { View, UserProfile } from '../../types/types';
 import SettingsModal from '../../features/settings/SettingsModal';
 import NotificationsPanel from '../../features/notifications/NotificationsPanel';
 

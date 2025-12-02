@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserStats, View, UserProfile } from '../../types';
+import { UserStats, View, UserProfile } from '../../types/types';
 
 interface DashboardProps {
   stats: UserStats;

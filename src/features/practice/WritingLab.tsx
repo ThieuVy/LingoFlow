@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { analyzeWriting } from '../../services/gemini';
-import { WritingSubmission } from '../../types';
+import { WritingSubmission } from '../../types/types';
 
 const WritingLab: React.FC = () => {
   const [input, setInput] = useState('');

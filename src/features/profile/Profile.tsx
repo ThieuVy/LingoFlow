@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, getHistoryList } from '../../services/supabase';
-import { UserStats, UserProfile } from '../../types';
+import { UserStats, UserProfile } from '../../types/types';
 
 interface ProfileProps {
   user: UserProfile;

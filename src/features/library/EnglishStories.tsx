@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 // FIX: Go up two levels
 import { fetchStories } from '../../services/gemini';
-import { Story } from '../../types';
+import { Story } from '../../types/types';
 
 interface EnglishStoriesProps {
   onReadStory: (story: Story) => void;

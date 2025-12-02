@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateText, playLongTextTTS, analyzeImage, lookupDictionary } from '../../services/gemini';
-import { ReaderSettings, NewsArticle } from '../../types';
+import { ReaderSettings, NewsArticle } from '../../types/types';
 
 interface ContentReaderProps {
     initialContent?: string;

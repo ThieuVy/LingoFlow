@@ -8,7 +8,7 @@ export enum View {
   TESTS = 'TESTS',
   DICTIONARY = 'DICTIONARY',
   PROFILE = 'PROFILE',
-  EDIT_PROFILE = 'EDIT_PROFILE' // Màn hình riêng
+  EDIT_PROFILE = 'EDIT_PROFILE'
 }
 
 export interface UserStats {
@@ -21,7 +21,7 @@ export interface UserStats {
 }
 
 export interface UserProfile {
-  id?: string; // Thêm ID để sync DB chính xác
+  id?: string;
   name: string;
   email: string;
   avatar: string;
@@ -96,6 +96,16 @@ export interface DictionaryData {
           synonyms?: string[];
       }[];
   }[];
+}
+
+export interface SavedWord {
+    id: string;
+    word: string;
+    phonetic: string;
+    meaning: string;
+    full_data: DictionaryData;
+    created_at: string;
+    status: 'new' | 'reviewing' | 'mastered';
 }
 
 export interface Message {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase, updateUserProfile } from '../../services/supabase';
-import { UserProfile } from '../../types';
+import { UserProfile } from '../../types/types';
 
 interface EditProfileProps {
   user: UserProfile;

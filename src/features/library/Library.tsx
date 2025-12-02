@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchBooks, fetchChapterContent } from '../../services/gemini';
-import { Book } from '../../types';
+import { Book } from '../../types/types';
 import ContentReader from '../reader/ContentReader';
 
 const Library: React.FC = () => {

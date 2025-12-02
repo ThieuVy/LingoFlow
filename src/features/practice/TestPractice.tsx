@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchExams, generateExamQuestions } from '../../services/gemini';
-import { Exam } from '../../types';
+import { Exam } from '../../types/types';
 
 const TestPractice: React.FC = () => {
   const [loading, setLoading] = useState(false);

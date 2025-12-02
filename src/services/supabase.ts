@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import { UserProfile, UserStats, DictionaryData } from '../types';
+import { UserProfile, UserStats, DictionaryData, SavedWord } from '../types/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Supabase URL and Key are missing! Check your .env file.");
+    throw new Error("Supabase URL and Key are missing!");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
@@ -20,84 +20,81 @@ export const fetchFullUserProfile = async (userId: string) => {
   
   if (error) return null;
 
-  // Map DB data sang Types của App
   const profile: UserProfile = {
+    id: data.id,
     name: data.full_name || data.email,
     email: data.email,
     avatar: data.avatar_url || '',
-    nativeLanguage: data.native_language,
-    targetLanguage: data.target_language,
+    nativeLanguage: data.native_language || 'English',
+    targetLanguage: data.target_language || 'Spanish',
     plan: data.plan || 'Free',
     joinDate: new Date(data.join_date).toLocaleDateString()
   };
 
   const stats: UserStats = {
-    vocabularySize: data.vocabulary_size,
-    listeningHours: data.listening_hours,
-    speakingMinutes: data.speaking_minutes,
-    currentStreak: data.streak,
-    level: data.level as any,
-    totalPoints: data.points
+    vocabularySize: data.vocabulary_size || 0,
+    listeningHours: data.listening_hours || 0,
+    speakingMinutes: data.speaking_minutes || 0,
+    currentStreak: data.streak || 0,
+    level: (data.level as any) || 'A1',
+    totalPoints: data.points || 0
   };
 
   return { profile, stats };
 };
 
 export const updateUserProfile = async (userId: string, updates: Partial<UserProfile>) => {
-    // Chỉ update các trường cho phép
     const dbUpdates = {
         full_name: updates.name,
         native_language: updates.nativeLanguage,
         target_language: updates.targetLanguage,
+        avatar_url: updates.avatar
     };
     const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', userId);
     return error;
 };
 
-// --- VOCABULARY ---
+// --- VOCABULARY (FIXED) ---
 export const saveVocabulary = async (userId: string, wordData: DictionaryData) => {
-    // 1. Lưu từ vựng
+    // 1. Kiểm tra từ đã tồn tại chưa để tránh trùng
+    const { data: existing } = await supabase
+        .from('vocabulary')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('word', wordData.word)
+        .single();
+
+    if (existing) return null; // Đã có rồi thì không lưu nữa
+
+    // 2. Lưu từ mới
     const { error } = await supabase.from('vocabulary').insert([{
         user_id: userId,
         word: wordData.word,
         phonetic: wordData.phonetic,
         meaning: wordData.meanings[0]?.definitions[0]?.definition || '',
-        full_data: wordData, // Lưu JSON gốc
-        status: 'learning'
+        full_data: wordData, 
+        status: 'new'
     }]);
 
     if (!error) {
-        // 2. Tăng thống kê từ vựng (Gọi RPC hoặc update thủ công)
-        // Cách đơn giản (Update thủ công):
+        // 3. Tăng counter (RPC hoặc query count)
         const { count } = await supabase.from('vocabulary').select('*', { count: 'exact', head: true }).eq('user_id', userId);
         await supabase.from('profiles').update({ vocabulary_size: count }).eq('id', userId);
     }
     return error;
 };
 
-export const getVocabularyList = async (userId: string) => {
-    const { data } = await supabase.from('vocabulary').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    return data;
+export const getVocabularyList = async (userId: string): Promise<SavedWord[]> => {
+    const { data } = await supabase
+        .from('vocabulary')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+    
+    return (data as SavedWord[]) || [];
 };
 
 // --- HISTORY ---
-export const addToHistory = async (userId: string, item: { title: string, type: string, score?: number }) => {
-    await supabase.from('learning_history').insert([{
-        user_id: userId,
-        title: item.title,
-        type: item.type,
-        score: item.score || 0,
-        status: 'Completed'
-    }]);
-    
-    // Cộng điểm (ví dụ: 10 điểm cho mỗi hoạt động)
-    // Cần lấy điểm hiện tại trước hoặc dùng function RPC increments
-    const { data } = await supabase.from('profiles').select('points').eq('id', userId).single();
-    if (data) {
-        await supabase.from('profiles').update({ points: data.points + 10 }).eq('id', userId);
-    }
-};
-
 export const getHistoryList = async (userId: string) => {
     const { data } = await supabase.from('learning_history').select('*').eq('user_id', userId).order('completed_at', { ascending: false });
     return data;

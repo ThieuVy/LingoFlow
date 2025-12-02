@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchDailyNews } from '../../services/gemini';
-import { NewsArticle } from '../../types';
+import { NewsArticle } from '../../types/types';
 import ContentReader from '../reader/ContentReader';
 import { CardSkeleton } from '../../components/ui/Skeleton'; // Import Skeleton
 
