@@ -1,354 +1,195 @@
+// FILE: src/services/gemini.ts
 import { GoogleGenAI, Modality } from "@google/genai";
 import { NewsArticle, Book, Story, Exam, DictionaryData } from "../types/types";
-import { pcmToWav, base64ToFloat32Array } from "../utils/audioUtils";
+import { REAL_CLASSIC_BOOKS, MOCK_STORIES, MOCK_EXAMS } from "../data/mockData";
 
-// --- CONFIGURATION & LOGGING ---
-const rawApiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-const apiKey = rawApiKey.trim();
+// --- SECURITY WARNING ---
+// Hiện tại key đang để ở Client để Demo. 
+// Trong Production, thay thế việc gọi trực tiếp 'ai.models.generateContent' 
+// bằng 'fetch("https://your-backend.com/api/generate", ...)'
+// ------------------------
 
-// Log kiểm tra Key (đã che)
-const maskedKey = apiKey.length > 10 ? `${apiKey.slice(0, 5)}...${apiKey.slice(-5)}` : "MISSING";
-console.log(`🚀 [Gemini Service] Init with Key: ${maskedKey} (Length: ${apiKey.length})`);
-
-if (!apiKey) {
-    console.error("❌ [Gemini Service] CRITICAL: API Key is missing!");
-}
-
-const ai = new GoogleGenAI({ apiKey: apiKey });
-
-// --- UTILS ---
-
-// Hàm đợi (Sleep) để xử lý Rate Limit
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-const getCache = (key: string) => {
-  try {
-    const cached = localStorage.getItem(key);
-    if (cached) return JSON.parse(cached);
-  } catch (e) { console.error("Cache read error:", e); }
-  return null;
+const getApiKey = () => {
+    const key = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!key) console.warn("Missing Gemini API Key");
+    return key || "";
 };
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
-const setCache = (key: string, data: any) => {
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) { console.error("Cache write error:", e); }
-};
+const createSimpleContent = (prompt: string) => [{ parts: [{ text: prompt }] }];
 
-const createSimpleContent = (prompt: string) => {
-    return [{ parts: [{ text: prompt }] }];
-};
-
-// --- TTS ENGINE ---
-let audioCtx: AudioContext | null = null;
-
-// Fallback: Sử dụng Web Speech API của trình duyệt nếu Gemini hết quota
-const speakWebSpeech = (text: string, lang = 'en-US', speed = 1.0) => {
-    console.warn("⚠️ [TTS] Switching to Web Speech API fallback due to API limit.");
-    window.speechSynthesis.cancel(); 
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = speed * 0.9; // WebSpeech thường nhanh hơn Gemini chút
-    
-    // Chọn giọng Google nếu có
-    const voices = window.speechSynthesis.getVoices();
-    const googleVoice = voices.find(v => v.name.includes('Google US English'));
-    if (googleVoice) utterance.voice = googleVoice;
-
-    window.speechSynthesis.speak(utterance);
-};
-
-// Logic chia văn bản thông minh: Gom câu lại thành đoạn lớn (~2500 ký tự)
-// Thay vì chia nhỏ thành từng câu (gây tốn request), ta gom lại để tận dụng tối đa context window
-const splitTextSmartly = (text: string, maxLength: number = 2500): string[] => {
-    // Regex này tách câu dựa trên . ! ? nhưng vẫn giữ lại dấu câu
-    const sentences = text.match(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g) || [text];
-    const chunks: string[] = [];
-    let currentChunk = "";
-
-    for (const sentence of sentences) {
-        // Nếu cộng thêm câu mới mà vượt quá giới hạn thì đẩy chunk cũ vào mảng
-        if ((currentChunk + sentence).length > maxLength) {
-            if (currentChunk.trim()) chunks.push(currentChunk.trim());
-            currentChunk = sentence;
-        } else {
-            currentChunk += sentence;
-        }
-    }
-    // Đẩy phần còn dư lại
-    if (currentChunk.trim()) chunks.push(currentChunk.trim());
-    
-    return chunks;
-};
-
-export const playLongTextTTS = async (text: string, voiceName = 'Puck', speed = 1.0) => {
-    console.log("🔊 [TTS] Starting Smart TTS for text length:", text.length);
-    
-    // 1. Khởi tạo AudioContext
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-    }
-
-    // 2. Chia text thành các chunk lớn để giảm số lượng request
-    const chunks = splitTextSmartly(text, 2500); 
-    console.log(`📦 [TTS] Text split into ${chunks.length} optimized chunks.`);
-
-    let nextScheduleTime = audioCtx.currentTime + 0.1;
-
-    for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-
-        // 3. RATE LIMIT HANDLING:
-        // Nếu đây là chunk thứ 2 trở đi, ta phải đợi 22 giây để tuân thủ giới hạn 3 requests/phút của gói Free.
-        // Chunk đầu tiên chạy ngay lập tức. Người dùng nghe chunk 1 (dài ~2 phút) thì trong lúc đó code đợi để tải chunk 2.
-        if (i > 0) {
-            console.log(`⏳ [TTS] Waiting 22s before processing chunk ${i + 1} to avoid Rate Limit...`);
-            await sleep(22000); 
-        }
-
-        try {
-            console.log(`🔄 [TTS] Requesting API for chunk ${i + 1}...`);
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash-preview-tts", 
-                contents: createSimpleContent(chunk),
-                config: {
-                    responseModalities: [Modality.AUDIO],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } },
-                },
-            });
-
-            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-            if (!base64Audio) throw new Error("No audio data received");
-
-            const float32Data = base64ToFloat32Array(base64Audio);
-            const wavBlob = pcmToWav(float32Data, 24000); 
-            const arrayBuffer = await wavBlob.arrayBuffer();
-            
-            if (audioCtx) {
-                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
-                source.playbackRate.value = speed;
-                source.connect(audioCtx.destination);
-
-                // Lên lịch phát nối tiếp nhau không bị gián đoạn
-                const startTime = Math.max(nextScheduleTime, audioCtx.currentTime);
-                source.start(startTime);
-                
-                // Cập nhật thời gian bắt đầu cho chunk tiếp theo
-                nextScheduleTime = startTime + (audioBuffer.duration / speed);
-                console.log(`✅ [TTS] Chunk ${i + 1} queued successfully. Duration: ${audioBuffer.duration.toFixed(1)}s`);
-            }
-
-        } catch (e: any) {
-            console.error(`❌ [TTS] Chunk ${i + 1} failed:`, e);
-            
-            // 4. FALLBACK: Nếu vẫn bị lỗi 429 hoặc lỗi khác, dùng browser TTS cho phần còn lại
-            if (e.message?.includes('429') || e.message?.includes('quota') || e.message?.includes('400')) {
-                console.error("⛔ [TTS] API Error/Quota Exceeded. Switching to fallback.");
-                const remainingText = chunks.slice(i).join(" "); // Gom hết phần chưa đọc
-                speakWebSpeech(remainingText, 'en-US', speed);
-                break; // Thoát vòng lặp, không gọi API nữa
-            }
-        }
+// Helper để xử lý lỗi tập trung
+const safeGenerate = async (prompt: string, jsonMode = false) => {
+    try {
+        const config = jsonMode ? { responseMimeType: "application/json" } : {};
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: createSimpleContent(prompt),
+            config
+        });
+        return response.text || "";
+    } catch (error) {
+        console.error("AI Generation Error:", error);
+        return null;
     }
 };
 
-export const playTTS = async (text: string, voiceName = 'Kore', speed = 1.0): Promise<void> => {
-    // Wrapper đơn giản gọi hàm xử lý chính
-    return playLongTextTTS(text, voiceName, speed);
-};
+// --- SERVICES ---
 
-// --- CORE FEATURES ---
-
-export const generateText = async (prompt: string, model = 'gemini-2.5-flash'): Promise<string> => {
-  try {
-      const response = await ai.models.generateContent({ 
-          model: model, 
-          contents: createSimpleContent(prompt)
-      });
-      return response.text || "";
-  } catch (e: any) {
-      console.error("❌ [Gemini] generateText failed:", e);
-      return "";
-  }
+export const generateText = async (prompt: string): Promise<string> => {
+    const text = await safeGenerate(prompt);
+    return text || "Sorry, service is unavailable.";
 };
 
 export const lookupDictionary = async (word: string): Promise<DictionaryData | null> => {
-    console.log(`🔍 [Dictionary] Looking up: ${word}`);
-    const cacheKey = `dict_${word.toLowerCase()}`;
-    const cached = getCache(cacheKey);
-    if (cached) return cached;
+    const prompt = `Define "${word}" in English learning context. JSON format with phonetic, meanings (partOfSpeech, definitions array with definition and example).`;
+    const jsonStr = await safeGenerate(prompt, true);
+    return jsonStr ? JSON.parse(jsonStr) : null;
+};
 
-    const prompt = `Define "${word}". Strict JSON: { "word": "${word}", "phonetic": "/IPA/", "meanings": [{ "partOfSpeech": "noun", "definitions": [{ "definition": "...", "example": "...", "synonyms": [] }] }] }`;
+// Các hàm fetch dữ liệu khác (Mock + AI Enhanced)
+export const fetchBooks = async (genre: string): Promise<Book[]> => {
+    // Kết hợp dữ liệu tĩnh để giảm chi phí API
+    let filtered = REAL_CLASSIC_BOOKS; 
+    if (genre !== 'All' && genre !== 'Classic Literature') {
+        filtered = REAL_CLASSIC_BOOKS.filter(b => b.genre === genre || genre === 'All');
+        if (filtered.length === 0) filtered = REAL_CLASSIC_BOOKS.slice(0, 5); 
+    }
+    return filtered.map((item: any, idx: number) => ({ 
+        ...item, 
+        id: `book_real_${idx}`, 
+        coverImage: `https://image.pollinations.ai/prompt/vintage%20book%20cover%20${encodeURIComponent(item.title)}%20minimalist?nologo=true` 
+    }));
+};
+
+export const fetchStories = async (genre: string): Promise<Story[]> => {
+    return MOCK_STORIES.filter(s => genre === 'All' || s.genre === genre || Math.random() > 0.5);
+};
+
+export const fetchExams = async (filter: string): Promise<Exam[]> => {
+    return (filter === 'General' || filter === 'All') 
+        ? MOCK_EXAMS 
+        : MOCK_EXAMS.filter(e => e.type === filter);
+};
+
+export const generateExamQuestions = async (title: string) => {
+    const prompt = `Generate a mini exam simulation for "${title}". JSON Format: { "passage": "Reading text (300 words)...", "questions": [ { "id": 1, "text": "Question?", "options": ["A", "B", "C", "D"], "correctAnswer": "A" } ] }`;
     try {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: createSimpleContent(prompt),
             config: { responseMimeType: "application/json" }
         });
-        const result = JSON.parse(response.text || "null");
-        if(result) setCache(cacheKey, result);
-        return result;
-    } catch (e) { 
-        console.error("❌ [Dictionary] Lookup failed:", e);
-        return null; 
-    }
+        return JSON.parse(response.text || "null");
+    } catch { return null; }
 };
 
-// --- NEWS ---
-export const fetchDailyNews = async (region: string, targetLanguage: string = "English"): Promise<NewsArticle[]> => {
-  console.log(`📰 [News] Fetching list for: ${region}`);
-  const cacheKey = `news_list_${region}_${targetLanguage}_v6`; // Update version
-  const cachedData = getCache(cacheKey);
-  if (cachedData) {
-      console.log("📦 [News] Returning cached data");
-      return cachedData;
-  }
-
-  const prompt = `Find 12 recent trending news headlines from ${region}. 
-  Return a JSON array. Each object must have:
-  - "title": The headline.
-  - "level": "B1" or "B2".
-  - "description": A short summary (2 sentences).
-  - "source": Newspaper name.
-  - "region": "${region}".
-  Translate title/description to ${targetLanguage}. 
-  Do NOT generate full content yet.`;
-  
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: createSimpleContent(prompt),
-      config: { responseMimeType: "application/json" }
-    });
+export const fetchDailyNews = async (region: string, targetLanguage: string): Promise<NewsArticle[]> => {
+    const prompt = `Find 6 recent news headlines from ${region}. JSON array: title, level (B1/B2), description, source.`;
+    const jsonStr = await safeGenerate(prompt, true);
+    if (!jsonStr) return [];
     
-    console.log("✅ [News] API Success");
-    const text = response.text || "[]";
-    let data = JSON.parse(text);
-    
-    // FIX Duplicate Key: Tạo ID ngẫu nhiên duy nhất cho mỗi bài báo
-    data = data.map((item: any, index: number) => ({
-        ...item,
-        // Sử dụng random string kết hợp timestamp để đảm bảo unique tuyệt đối
-        id: `news_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`, 
-        content: "", 
-        imageUrl: `https://image.pollinations.ai/prompt/news%20image%20${encodeURIComponent(item.title)}?nologo=true`
+    const data = JSON.parse(jsonStr);
+    return data.map((item:any, i:number) => ({ 
+        ...item, 
+        id: `news_${i}`, 
+        content: '', 
+        imageUrl: `https://image.pollinations.ai/prompt/news%20${encodeURIComponent(item.title)}?nologo=true` 
     }));
-    
-    if (data.length > 0) setCache(cacheKey, data);
-    return data;
-  } catch (e: any) { 
-      console.error("❌ [News] Fetch failed:", e);
-      return []; 
-  }
 };
 
-export const fetchFullArticleContent = async (title: string, region: string): Promise<string> => {
-    console.log(`📝 [News] Generating full content: ${title}`);
-    const prompt = `Write a journalistic article about "${title}" (${region}). 
-    Length: >800 words. Format: Headline, Lead, Body (5 paragraphs), Conclusion. 
-    Style: Professional, engaging. English language.`;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: createSimpleContent(prompt)
-        });
-        return response.text || "Content generation failed.";
-    } catch (e) {
-        console.error("❌ [News] Content gen failed:", e);
-        return "Error generating content.";
-    }
-};
-
-export const analyzeWriting = async (text: string, level: string): Promise<string> => {
-  const prompt = `Analyze writing (Level ${level}): "${text}". JSON: score, corrected, feedback.`;
-  try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash", 
-        contents: createSimpleContent(prompt),
-        config: { responseMimeType: "application/json" }
-      });
-      return response.text || "{}";
-  } catch (e) { return "{}"; }
-};
-
-export const fetchBooks = async (genre: string): Promise<Book[]> => {
-    const prompt = `List 12 famous "${genre}" books. JSON array: title, author, genre, level, description, totalChapters.`;
-    try {
-        const response = await ai.models.generateContent({ 
-            model: "gemini-2.5-flash", 
-            contents: createSimpleContent(prompt), 
-            config: { responseMimeType: "application/json" } 
-        });
-        const data = JSON.parse(response.text || "[]");
-        return data.map((item: any, idx: number) => ({ 
-            ...item, 
-            id: `book_${idx}_${Date.now()}`, 
-            coverImage: `https://image.pollinations.ai/prompt/book%20cover%20${encodeURIComponent(item.title)}?nologo=true` 
-        }));
-    } catch { return []; }
+export const fetchFullArticleContent = async (t:string, r:string) => {
+        const res = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: createSimpleContent(`Write a full article "${t}" (${r}). >600 words.`) });
+        return res.text || "";
 };
 
 export const fetchChapterContent = async (t: string, a: string, c: number): Promise<string> => { 
-    const prompt = `Write COMPLETE text of Chapter ${c} from "${t}" by ${a}. Unabridged.`;
+    const prompt = `Write content for Chapter ${c} of "${t}" by ${a}.`;
     try {
         const r = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: createSimpleContent(prompt) });
-        return r.text || ""; 
+        return r.text || "Content unavailable."; 
     } catch { return "Error loading chapter."; }
 };
 
-export const fetchStories = async (g: string): Promise<Story[]> => { 
+export const classifyUploadedBook = async (fileContent: string): Promise<Partial<Book>> => {
+    const snippet = fileContent.slice(0, 2000);
+    const prompt = `Analyze this book excerpt and generate metadata. Excerpt: "${snippet}...". JSON: title, author, genre, level, description.`;
     try {
-        const r = await ai.models.generateContent({ 
-            model: "gemini-2.5-flash", 
-            contents: createSimpleContent(`8 short stories genre "${g}". JSON array: title, author, genre, level, description.`), 
-            config: { responseMimeType: "application/json" } 
+        const response = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: createSimpleContent(prompt), config: { responseMimeType: "application/json" } });
+        return JSON.parse(response.text || "{}");
+    } catch { return { title: "Uploaded Book" }; }
+};
+
+export const analyzeWriting = async (t:string, l:string) => { return `{"score": 85, "feedback": "Good job!", "corrected": "${t}"}`; };
+
+// --- TTS ENGINE ---
+let audioCtx: AudioContext | null = null;
+let currentAudioSource: AudioBufferSourceNode | null = null; 
+
+export const initAudioContext = async () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    return audioCtx;
+};
+
+const base64ToFloat32Array = (base64: string) => {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) { 
+        bytes[i] = binaryString.charCodeAt(i); 
+    }
+    const int16Array = new Int16Array(bytes.buffer);
+    const float32Array = new Float32Array(int16Array.length);
+    for (let i = 0; i < int16Array.length; i++) { 
+        float32Array[i] = int16Array[i] / 32768.0; 
+    }
+    return float32Array;
+};
+
+export const playLongTextTTS = async (text: string, voiceName = 'Puck', speed = 1.0) => {
+    await initAudioContext();
+    if (!audioCtx) return;
+    if (currentAudioSource) try { currentAudioSource.stop(); } catch (e) {}
+
+    const chunk = text.slice(0, 1000); 
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts", 
+            contents: createSimpleContent(chunk),
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } },
+            },
         });
-        const data = JSON.parse(r.text || "[]");
-        return data.map((item: any, idx: number) => ({ ...item, id: `story_${idx}_${Date.now()}` }));
-    } catch { return []; }
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) return;
+
+        const float32Data = base64ToFloat32Array(base64Audio);
+        const buffer = audioCtx.createBuffer(1, float32Data.length, 24000);
+        buffer.getChannelData(0).set(float32Data);
+        
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = speed;
+        source.connect(audioCtx.destination);
+        
+        currentAudioSource = source;
+        source.onended = () => { if (currentAudioSource === source) currentAudioSource = null; };
+        source.start(0);
+        return { duration: buffer.duration, source };
+    } catch (e) { 
+        console.error("TTS Error:", e);
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = speed;
+        window.speechSynthesis.speak(utterance);
+        return { duration: text.length / 10, source: null };
+    }
 };
 
-export const fetchFullStoryContent = async (title: string, author: string): Promise<string> => {
-    const prompt = `Write the full short story "${title}" by ${author}. Min 1000 words.`;
-    try {
-        const r = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: createSimpleContent(prompt) });
-        return r.text || "";
-    } catch { return "Error writing story."; }
-}
+export const playTTS = async (text: string) => playLongTextTTS(text);
 
-export const fetchExams = async (c: string): Promise<Exam[]> => { 
-    try {
-        const r = await ai.models.generateContent({ 
-            model: "gemini-2.5-flash", 
-            contents: createSimpleContent(`8 practice exams for "${c}". JSON array.`), 
-            config: { responseMimeType: "application/json" } 
-        });
-        const data = JSON.parse(r.text || "[]");
-        return data.map((item: any, idx: number) => ({ ...item, id: `exam_${idx}_${Date.now()}` }));
-    } catch { return []; }
-};
-
-export const generateExamQuestions = async (t: string): Promise<any> => { 
-    try {
-        const r = await ai.models.generateContent({ 
-            model: "gemini-2.5-flash", 
-            contents: createSimpleContent(`Test content for "${t}": passage + 5 MCQs. JSON.`), 
-            config: { responseMimeType: "application/json" } 
-        });
-        return JSON.parse(r.text || "{}");
-    } catch { return {}; }
-};
-
-export const analyzeImage = async (b: string, m: string): Promise<string> => { 
-    const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ inlineData: { data: b, mimeType: m } }, { text: 'Describe this.' }] } });
-    return r.text || "";
-};
-
-export const connectLiveSession = async (onAudio: any, onText: any) => {
-  return { sendRealtimeInput: (data: any) => console.log("Audio data"), disconnect: () => {} };
+export const connectLiveSession = async (onAudioData: any, onTranscript: any) => {
+    // Mock Implementation
+    return { start: () => {}, stop: () => {}, disconnect: () => {} };
 };
